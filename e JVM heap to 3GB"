@@ -1,0 +1,41 @@
+[1mdiff --git a/.github/workflows/build.yml b/.github/workflows/build.yml[m
+[1mindex c9bb78b..cd25a69 100644[m
+[1m--- a/.github/workflows/build.yml[m
+[1m+++ b/.github/workflows/build.yml[m
+[36m@@ -1,36 +1,28 @@[m
+ name: Build APK[m
+[31m-[m
+ on:[m
+   push:[m
+     branches: [ main ][m
+   pull_request:[m
+     branches: [ main ][m
+[31m-[m
+ jobs:[m
+   build:[m
+     runs-on: ubuntu-latest[m
+[31m-[m
+     steps:[m
+       - name: Checkout code[m
+         uses: actions/checkout@v4[m
+[31m-[m
+       - name: Setup JDK 17[m
+         uses: actions/setup-java@v4[m
+         with:[m
+           java-version: '17'[m
+           distribution: 'temurin'[m
+[31m-[m
+       - name: Setup Android SDK[m
+         uses: android-actions/setup-android@v3[m
+[31m-[m
+       - name: Grant execute permission for gradlew[m
+         run: chmod +x gradlew[m
+[31m-[m
+       - name: Build Debug APK[m
+         run: ./gradlew assembleDebug --no-daemon[m
+         env:[m
+           GRADLE_OPTS: "-Xmx3g -XX:MaxMetaspaceSize=512m"[m
+[31m-[m
+       - name: Upload APK[m
+         uses: actions/upload-artifact@v4[m
+         with:[m

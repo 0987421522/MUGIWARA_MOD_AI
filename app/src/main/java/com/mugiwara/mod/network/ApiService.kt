@@ -27,7 +27,7 @@ data class ImageChatResponse(
 interface ApiService {
     @POST("/chat")
     suspend fun sendMessage(@Body request: ChatRequest): Response<ChatResponse>
-    
+
     @Multipart
     @POST("/chat-with-image")
     suspend fun sendMessageWithImage(
@@ -38,19 +38,20 @@ interface ApiService {
 }
 
 object RetrofitClient {
-    private const val BASE_URL = "http://10.167.111.56:8000/"  // For Android emulator, use your IP for real device
-    
+    // غيّر هذا الـ IP لـ IP هاتفك على الشبكة
+    private const val BASE_URL = "http://YOUR_PHONE_IP:8000/"
+
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
     }
-    
+
     private val httpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .build()
-    
+
     val instance: ApiService by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -21,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.mugiwara.mod.network.ChatRequest
+import com.mugiwara.mod.network.RetrofitClient
 import com.mugiwara.mod.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -28,7 +29,8 @@ data class ChatMessage(
     val id: Int,
     val text: String,
     val isUser: Boolean,
-    val imageUri: Uri? = null
+    val imageUri: Uri? = null,
+    val isLoading: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,26 +42,17 @@ fun ChatScreen(
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var inputText by remember { mutableStateOf("") }
     var selectedImage by remember { mutableStateOf<Uri?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var messageId by remember { mutableStateOf(1) }
-    
-    // Image picker
+
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        selectedImage = uri
-    }
-    
-    // Camera launcher
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        // Handle camera image
-    }
-    
+    ) { uri: Uri? -> selectedImage = uri }
+
     val sendMessage = {
-        if (inputText.isNotBlank() || selectedImage != null) {
+        if (inputText.isNotBlank() && !isLoading) {
             val userMsg = ChatMessage(
                 id = messageId++,
                 text = inputText,
@@ -67,30 +60,46 @@ fun ChatScreen(
                 imageUri = selectedImage
             )
             messages = messages + userMsg
-            
-            // Simulate AI response (في الحقيقة بتتصل بالـ API)
-            val aiResponse = ChatMessage(
-                id = messageId++,
-                text = "مرحبًا! أنا MUGIWARA MOD، خبير الأمن السيبراني. كيف يمكنني مساعدتك اليوم؟",
-                isUser = false
-            )
-            messages = messages + aiResponse
-            
+            val currentInput = inputText
             inputText = ""
             selectedImage = null
-            
+            isLoading = true
+
             scope.launch {
                 listState.animateScrollToItem(messages.size - 1)
+                try {
+                    val response = RetrofitClient.instance.sendMessage(
+                        ChatRequest(message = currentInput, language = "ar")
+                    )
+                    val reply = if (response.isSuccessful && response.body() != null) {
+                        response.body()!!.reply
+                    } else {
+                        "⚠️ تعذر الاتصال بالخادم. تأكد من تشغيل backend."
+                    }
+                    messages = messages + ChatMessage(
+                        id = messageId++,
+                        text = reply,
+                        isUser = false
+                    )
+                } catch (e: Exception) {
+                    messages = messages + ChatMessage(
+                        id = messageId++,
+                        text = "⚠️ خطأ في الاتصال: ${e.localizedMessage}",
+                        isUser = false
+                    )
+                } finally {
+                    isLoading = false
+                    listState.animateScrollToItem(messages.size - 1)
+                }
             }
         }
     }
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(BlackBackground)
     ) {
-        // Top Bar
         TopAppBar(
             title = {
                 Column {
@@ -119,8 +128,7 @@ fun ChatScreen(
                 }
             }
         )
-        
-        // Chat Messages
+
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -133,7 +141,7 @@ fun ChatScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 100.dp),
+                            .padding(top = 80.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -148,43 +156,72 @@ fun ChatScreen(
                                 "👨‍💻 MUGIWARA MOD",
                                 color = Red500,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp
+                                fontSize = 22.sp
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "خبير الأمن السيبراني - Ethical Hacker - Programmer",
-                                color = GrayText,
-                                fontSize = 14.sp
+                                "خبير الأمن السيبراني",
+                                color = Green500,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                "متخصص في اختبار الاختراق، البرمجة، والتداول",
-                                color = Green500,
+                                "Ethical Hacker | Programmer | Trader",
+                                color = GrayText,
                                 fontSize = 13.sp
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "Developed by: MUGIWARA 🏴‍☠️",
-                                color = GrayText,
-                                fontSize = 12.sp
-                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = BlackCard),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("💬 اسألني عن:", color = WhiteText, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("🔒 الأمن السيبراني", color = Red500, fontSize = 14.sp)
+                                    Text("💻 البرمجة", color = Green500, fontSize = 14.sp)
+                                    Text("📈 التداول", color = Red500, fontSize = 14.sp)
+                                    Text("🛡️ اختبار الاختراق", color = Green500, fontSize = 14.sp)
+                                }
+                            }
                         }
                     }
                 }
             }
-            
+
             items(messages) { message ->
                 ChatBubble(message = message)
                 Spacer(modifier = Modifier.height(8.dp))
             }
+
+            if (isLoading) {
+                item {
+                    Row(
+                        modifier = Modifier.padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = Green500,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("MUGIWARA يفكر...", color = GrayText, fontSize = 14.sp)
+                    }
+                }
+            }
         }
-        
-        // Image preview
+
         if (selectedImage != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
+                    .height(100.dp)
                     .padding(horizontal = 12.dp, vertical = 4.dp)
                     .background(BlackCard, RoundedCornerShape(12.dp))
             ) {
@@ -194,13 +231,13 @@ fun ChatScreen(
                 ) {
                     AsyncImage(
                         model = selectedImage,
-                        contentDescription = "Selected image",
+                        contentDescription = null,
                         modifier = Modifier
-                            .size(80.dp)
+                            .size(70.dp)
                             .clip(RoundedCornerShape(8.dp))
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("تم تحديد الصورة", color = Green500, fontSize = 14.sp)
+                    Text("تم تحديد الصورة ✅", color = Green500, fontSize = 14.sp)
                     Spacer(modifier = Modifier.weight(1f))
                     IconButton(onClick = { selectedImage = null }) {
                         Icon(Icons.Default.Close, "إزالة", tint = Red500)
@@ -208,8 +245,7 @@ fun ChatScreen(
                 }
             }
         }
-        
-        // Input Bar
+
         Surface(
             color = BlackSurface,
             modifier = Modifier.fillMaxWidth()
@@ -223,16 +259,11 @@ fun ChatScreen(
                 IconButton(onClick = { imagePicker.launch("image/*") }) {
                     Icon(Icons.Default.Image, "صورة", tint = Green500)
                 }
-                IconButton(onClick = { cameraLauncher.launch(null) }) {
-                    Icon(Icons.Default.CameraAlt, "كاميرا", tint = Red500)
-                }
-                
+
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    placeholder = { 
-                        Text("اكتب سؤالك هنا...", color = GrayText)
-                    },
+                    placeholder = { Text("اكتب سؤالك هنا...", color = GrayText) },
                     modifier = Modifier.weight(1f),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = WhiteText,
@@ -241,14 +272,18 @@ fun ChatScreen(
                         focusedBorderColor = Red500,
                         unfocusedBorderColor = BlackCard
                     ),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    enabled = !isLoading
                 )
-                
-                IconButton(onClick = sendMessage) {
+
+                IconButton(
+                    onClick = sendMessage,
+                    enabled = !isLoading
+                ) {
                     Icon(
                         Icons.Default.Send,
                         "إرسال",
-                        tint = if (inputText.isNotBlank() || selectedImage != null) Red500 else GrayText
+                        tint = if (inputText.isNotBlank() && !isLoading) Red500 else GrayText
                     )
                 }
             }
@@ -265,7 +300,7 @@ fun ChatBubble(message: ChatMessage) {
     } else {
         RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
     }
-    
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment
@@ -273,7 +308,7 @@ fun ChatBubble(message: ChatMessage) {
         if (message.imageUri != null) {
             AsyncImage(
                 model = message.imageUri,
-                contentDescription = "Shared image",
+                contentDescription = null,
                 modifier = Modifier
                     .width(200.dp)
                     .height(200.dp)
@@ -281,7 +316,7 @@ fun ChatBubble(message: ChatMessage) {
             )
             Spacer(modifier = Modifier.height(4.dp))
         }
-        
+
         Surface(
             color = bgColor,
             shape = shape,
