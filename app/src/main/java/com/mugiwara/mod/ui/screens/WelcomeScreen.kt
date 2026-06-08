@@ -1,6 +1,5 @@
 package com.mugiwara.mod.ui.screens
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -19,49 +18,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mugiwara.mod.ui.theme.*
 import kotlinx.coroutines.delay
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
-import android.net.Uri
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.*
-import androidx.compose.ui.viewinterop.AndroidView
-import android.widget.VideoView
-import android.widget.MediaController
 
-// داخل Box قبل المحتوى:
-AndroidView(
-    modifier = Modifier.fillMaxSize(),
-    factory = { context ->
-        VideoView(context).apply {
-            setVideoURI(Uri.parse("android.resource://${context.packageName}/raw/background_video"))
-            setMediaController(null)
-            setOnPreparedListener { mp ->
-                mp.isLooping = true
-                start()
-            }
-        }
-    }
-)
-// داخل Column:
-Image(
-    painter = painterResource(id = R.drawable.logo),
-    contentDescription = "MUGIWARA MOD Logo",
-    modifier = Modifier
-        .size(200.dp)
-        .clip(CircleShape)
-)
 @Composable
 fun WelcomeScreen(onNavigateToChat: () -> Unit) {
     var startAnimation by remember { mutableStateOf(false) }
     var showButton by remember { mutableStateOf(false) }
-    
+
     LaunchedEffect(Unit) {
         delay(500)
         startAnimation = true
         delay(2000)
         showButton = true
     }
-    
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -78,7 +47,6 @@ fun WelcomeScreen(onNavigateToChat: () -> Unit) {
                 enter = fadeIn() + scaleIn()
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // App Icon
                     Box(
                         modifier = Modifier
                             .size(120.dp)
@@ -93,37 +61,36 @@ fun WelcomeScreen(onNavigateToChat: () -> Unit) {
                             modifier = Modifier.size(64.dp)
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(24.dp))
-                    
+
                     Text(
                         text = "🏴‍☠️ MUGIWARA MOD",
                         color = Red500,
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Text(
                         text = "خبير الأمن السيبراني والبرمجة",
                         color = Green500,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium
                     )
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     Text(
                         text = "Cyber Security Expert | Programmer | Ethical Hacker | Trader",
                         color = GrayText,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
                     )
-                    
+
                     Spacer(modifier = Modifier.height(32.dp))
-                    
-                    // Developer info box
+
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = BlackCard),
@@ -157,9 +124,9 @@ fun WelcomeScreen(onNavigateToChat: () -> Unit) {
                             )
                         }
                     }
-                    
+
                     Spacer(modifier = Modifier.height(32.dp))
-                    
+
                     AnimatedVisibility(
                         visible = showButton,
                         enter = fadeIn() + slideInVertically()
@@ -187,4 +154,3 @@ fun WelcomeScreen(onNavigateToChat: () -> Unit) {
         }
     }
 }
-
