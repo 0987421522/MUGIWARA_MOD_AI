@@ -9,20 +9,9 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.util.concurrent.TimeUnit
 
-data class ChatRequest(
-    val message: String,
-    val language: String = "ar"
-)
-
-data class ChatResponse(
-    val reply: String,
-    val language: String
-)
-
-data class ImageChatResponse(
-    val reply: String,
-    val language: String
-)
+data class ChatRequest(val message: String, val language: String = "ar")
+data class ChatResponse(val reply: String, val language: String)
+data class ImageChatResponse(val reply: String, val language: String)
 
 interface ApiService {
     @POST("/chat")
@@ -37,25 +26,57 @@ interface ApiService {
     ): Response<ImageChatResponse>
 }
 
-object RetrofitClient {
-    // غيّر هذا الـ IP لـ IP هاتفك على الشبكة
-    private const val BASE_URL = "http://YOUR_PHONE_IP:8000/"
+interface GroqApiService {
+    @POST("openai/v1/chat/completions")
+    suspend fun chat(@Body request: GroqRequest): Response<GroqResponse>
+}
 
-    private val loggingInterceptor = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
-    }
+data class GroqRequest(
+    val model: String = "llama3-70b-8192",
+    val messages: List<GroqMessage>,
+    val max_tokens: Int = 2048,
+    val temperature: Double = 0.7
+)
+data class GroqMessage(val role: String, val content: String)
+data class GroqResponse(val choices: List<GroqChoice>)
+data class GroqChoice(val message: GroqMessage)
+
+object GroqDirectClient {
+    var GROQ_API_KEY = "YOUR_GROQ_API_KEY_HERE"
 
     private val httpClient = OkHttpClient.Builder()
-        .addInterceptor(loggingInterceptor)
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .addHeader("Authorization", "Bearer $GROQ_API_KEY")
+                .addHeader("Content-Type", "application/json")
+                .build()
+            chain.proceed(request)
+        }
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    val instance: GroqApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://api.groq.com/")
+            .client(httpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(GroqApiService::class.java)
+    }
+}
+
+object RetrofitClient {
+    var BASE_URL = "https://your-app.onrender.com/"
+
     val instance: ApiService by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
-            .client(httpClient)
+            .client(OkHttpClient.Builder()
+                .connectTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .build())
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
