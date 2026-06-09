@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,11 +21,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.mugiwara.mod.network.ChatRequest
-import com.mugiwara.mod.network.RetrofitClient
+import com.mugiwara.mod.network.*
 import com.mugiwara.mod.ui.theme.*
 import kotlinx.coroutines.launch
 
+// ===== SYSTEM PROMPT للمساعد =====
+private const val SYSTEM_PROMPT = """أنت MUGIWARA MOD، مساعد ذكاء اصطناعي متكامل واحترافي.
+
+قدراتك الكاملة:
+🔹 البرمجة بجميع اللغات: Kotlin, Java, Python, JavaScript, C++, C#, PHP, Swift, Rust, Go, وغيرها
+🔹 تطوير تطبيقات Android وiOS
+🔹 تطوير الويب (Frontend وBackend)
+🔹 Linux وTermux وأوامر Shell
+🔹 الشبكات والبروتوكولات
+🔹 قواعد البيانات (SQL, NoSQL)
+🔹 الأمن السيبراني الدفاعي والأخلاقي (تعليمي فقط)
+🔹 الذكاء الاصطناعي وتعلم الآلة
+🔹 تصحيح الأكواد وشرحها
+🔹 بناء المشاريع من الصفر
+
+قواعد الرد:
+- رد دائماً بلغة المستخدم (عربي أو إنجليزي)
+- قدّم الأكواد كاملة وجاهزة للتنفيذ
+- اشرح كل خطوة بوضوح
+- كن دقيقاً ومفيداً دائماً"""
+
+// ===== Data Classes =====
 data class ChatMessage(
     val id: Int,
     val text: String,
@@ -47,6 +69,9 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     var messageId by remember { mutableStateOf(1) }
 
+    // تاريخ المحادثة للـ context
+    val conversationHistory = remember { mutableListOf<GroqMessage>() }
+
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? -> selectedImage = uri }
@@ -65,31 +90,67 @@ fun ChatScreen(
             selectedImage = null
             isLoading = true
 
+            // أضف رسالة المستخدم للتاريخ
+            conversationHistory.add(GroqMessage(role = "user", content = currentInput))
+
             scope.launch {
-                listState.animateScrollToItem(messages.size - 1)
+                if (messages.isNotEmpty()) {
+                    listState.animateScrollToItem(messages.size - 1)
+                }
                 try {
-                    val response = RetrofitClient.instance.sendMessage(
-                        ChatRequest(message = currentInput, language = "ar")
-                    )
-                    val reply = if (response.isSuccessful && response.body() != null) {
-                        response.body()!!.reply
-                    } else {
-                        "⚠️ تعذر الاتصال بالخادم. تأكد من تشغيل backend."
+                    // بناء قائمة الرسائل مع System Prompt
+                    val allMessages = mutableListOf(
+                        GroqMessage(role = "system", content = SYSTEM_PROMPT)
+                    ).apply {
+                        // أضف آخر 10 رسائل فقط لتجنب تجاوز الـ context
+                        addAll(conversationHistory.takeLast(10))
                     }
+
+                    val response = GroqDirectClient.instance.chat(
+                        GroqRequest(messages = allMessages)
+                    )
+
+                    val reply = if (response.isSuccessful && response.body() != null) {
+                        val replyText = response.body()!!.choices.firstOrNull()?.message?.content
+                            ?: "⚠️ لم يتم الحصول على رد."
+                        // أضف رد المساعد للتاريخ
+                        conversationHistory.add(GroqMessage(role = "assistant", content = replyText))
+                        replyText
+                    } else {
+                        val errorCode = response.code()
+                        when (errorCode) {
+                            401 -> "⚠️ مفتاح API غير صحيح.\nاذهب للإعدادات وأدخل مفتاح Groq الصحيح.\nاحصل عليه مجاناً من: console.groq.com"
+                            429 -> "⚠️ تم تجاوز حد الطلبات. انتظر دقيقة وأعد المحاولة."
+                            500 -> "⚠️ خطأ في الخادم. أعد المحاولة."
+                            else -> "⚠️ خطأ $errorCode: ${response.message()}"
+                        }
+                    }
+
                     messages = messages + ChatMessage(
                         id = messageId++,
                         text = reply,
                         isUser = false
                     )
+
                 } catch (e: Exception) {
+                    val errorMsg = when {
+                        e.message?.contains("Unable to resolve host") == true ->
+                            "⚠️ لا يوجد اتصال بالإنترنت.\nتأكد من الاتصال بالإنترنت وأعد المحاولة."
+                        e.message?.contains("timeout") == true ->
+                            "⚠️ انتهت مهلة الاتصال.\nأعد المحاولة."
+                        else ->
+                            "⚠️ خطأ: ${e.localizedMessage}"
+                    }
                     messages = messages + ChatMessage(
                         id = messageId++,
-                        text = "⚠️ خطأ في الاتصال: ${e.localizedMessage}",
+                        text = errorMsg,
                         isUser = false
                     )
                 } finally {
                     isLoading = false
-                    listState.animateScrollToItem(messages.size - 1)
+                    if (messages.isNotEmpty()) {
+                        listState.animateScrollToItem(messages.size - 1)
+                    }
                 }
             }
         }
@@ -100,18 +161,19 @@ fun ChatScreen(
             .fillMaxSize()
             .background(BlackBackground)
     ) {
+        // ===== TopBar =====
         TopAppBar(
             title = {
                 Column {
                     Text(
-                        text = "🏴‍☠️ MUGIWARA MOD",
+                        text = "🏴‍☠️ MUGIWARA MOD AI",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
                     Text(
-                        text = "خبير الأمن السيبراني",
-                        fontSize = 12.sp,
-                        color = Green500
+                        text = if (isLoading) "يفكر..." else "جاهز للمساعدة ✅",
+                        fontSize = 11.sp,
+                        color = if (isLoading) Red500 else Green500
                     )
                 }
             },
@@ -120,6 +182,13 @@ fun ChatScreen(
                 titleContentColor = WhiteText
             ),
             actions = {
+                // زر مسح المحادثة
+                IconButton(onClick = {
+                    messages = listOf()
+                    conversationHistory.clear()
+                }) {
+                    Icon(Icons.Default.Delete, "مسح المحادثة", tint = GrayText)
+                }
                 IconButton(onClick = onNavigateToAbout) {
                     Icon(Icons.Default.Info, "عن المطور", tint = Red500)
                 }
@@ -129,6 +198,7 @@ fun ChatScreen(
             }
         )
 
+        // ===== قائمة الرسائل =====
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -136,92 +206,65 @@ fun ChatScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             state = listState
         ) {
+            // شاشة الترحيب عند عدم وجود رسائل
             if (messages.isEmpty()) {
                 item {
-                    Box(
+                    WelcomeChatContent()
+                }
+            }
+
+            items(messages, key = { it.id }) { message ->
+                ChatBubble(message = message)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // مؤشر التحميل
+            if (isLoading) {
+                item {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 80.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.Security,
-                                contentDescription = null,
-                                tint = Red500,
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "👨‍💻 MUGIWARA MOD",
-                                color = Red500,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "خبير الأمن السيبراني",
-                                color = Green500,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "Ethical Hacker | Programmer | Trader",
-                                color = GrayText,
-                                fontSize = 13.sp
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = BlackCard),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.padding(horizontal = 16.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(BlackCard),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🏴‍☠️", fontSize = 18.sp)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = BlackCard),
+                            shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text("💬 اسألني عن:", color = WhiteText, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text("🔒 الأمن السيبراني", color = Red500, fontSize = 14.sp)
-                                    Text("💻 البرمجة", color = Green500, fontSize = 14.sp)
-                                    Text("📈 التداول", color = Red500, fontSize = 14.sp)
-                                    Text("🛡️ اختبار الاختراق", color = Green500, fontSize = 14.sp)
-                                }
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Green500,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("MUGIWARA يفكر...", color = GrayText, fontSize = 14.sp)
                             }
                         }
                     }
                 }
             }
-
-            items(messages) { message ->
-                ChatBubble(message = message)
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            if (isLoading) {
-                item {
-                    Row(
-                        modifier = Modifier.padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Green500,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("MUGIWARA يفكر...", color = GrayText, fontSize = 14.sp)
-                    }
-                }
-            }
         }
 
+        // ===== معاينة الصورة المحددة =====
         if (selectedImage != null) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(100.dp)
+                    .height(90.dp)
                     .padding(horizontal = 12.dp, vertical = 4.dp)
                     .background(BlackCard, RoundedCornerShape(12.dp))
             ) {
@@ -233,7 +276,7 @@ fun ChatScreen(
                         model = selectedImage,
                         contentDescription = null,
                         modifier = Modifier
-                            .size(70.dp)
+                            .size(60.dp)
                             .clip(RoundedCornerShape(8.dp))
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -246,6 +289,7 @@ fun ChatScreen(
             }
         }
 
+        // ===== حقل الإدخال =====
         Surface(
             color = BlackSurface,
             modifier = Modifier.fillMaxWidth()
@@ -254,7 +298,7 @@ fun ChatScreen(
                 modifier = Modifier
                     .padding(8.dp)
                     .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Bottom
             ) {
                 IconButton(onClick = { imagePicker.launch("image/*") }) {
                     Icon(Icons.Default.Image, "صورة", tint = Green500)
@@ -273,12 +317,13 @@ fun ChatScreen(
                         unfocusedBorderColor = BlackCard
                     ),
                     shape = RoundedCornerShape(24.dp),
-                    enabled = !isLoading
+                    enabled = !isLoading,
+                    maxLines = 5
                 )
 
                 IconButton(
                     onClick = sendMessage,
-                    enabled = !isLoading
+                    enabled = inputText.isNotBlank() && !isLoading
                 ) {
                     Icon(
                         Icons.Default.Send,
@@ -291,6 +336,58 @@ fun ChatScreen(
     }
 }
 
+// ===== محتوى الترحيب داخل ChatScreen =====
+@Composable
+fun WelcomeChatContent() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 40.dp, bottom = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("🏴‍☠️", fontSize = 64.sp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "MUGIWARA MOD AI",
+            color = Red500,
+            fontWeight = FontWeight.Bold,
+            fontSize = 22.sp
+        )
+        Text("مساعدك الذكي المتكامل", color = Green500, fontSize = 14.sp)
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // بطاقات القدرات
+        val capabilities = listOf(
+            "💻 اكتب لي كود Python/Kotlin/Java" to Red500,
+            "🐧 أوامر Linux وTermux" to Green500,
+            "🔒 أمن سيبراني وشبكات" to Red500,
+            "📱 تطوير تطبيقات Android" to Green500,
+            "🌐 تطوير ويب Frontend/Backend" to Red500,
+            "🗄️ قواعد البيانات SQL/NoSQL" to Green500,
+            "🐛 تصحيح الأكواد وشرحها" to Red500,
+            "🤖 الذكاء الاصطناعي وML" to Green500
+        )
+
+        capabilities.forEach { (text, color) ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 3.dp),
+                colors = CardDefaults.cardColors(containerColor = BlackCard),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = text,
+                    color = color,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+// ===== فقاعة الرسائل =====
 @Composable
 fun ChatBubble(message: ChatMessage) {
     val alignment = if (message.isUser) Alignment.End else Alignment.Start
@@ -305,6 +402,15 @@ fun ChatBubble(message: ChatMessage) {
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment
     ) {
+        if (!message.isUser) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🏴‍☠️", fontSize = 16.sp)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("MUGIWARA MOD", color = Red500, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+        }
+
         if (message.imageUri != null) {
             AsyncImage(
                 model = message.imageUri,
@@ -320,14 +426,23 @@ fun ChatBubble(message: ChatMessage) {
         Surface(
             color = bgColor,
             shape = shape,
-            modifier = Modifier.widthIn(max = 280.dp)
+            modifier = Modifier.widthIn(max = 300.dp)
         ) {
-            Text(
-                text = message.text,
-                color = WhiteText,
-                fontSize = 15.sp,
-                modifier = Modifier.padding(12.dp)
-            )
+            // SelectionContainer يسمح للمستخدم بنسخ النص
+            SelectionContainer {
+                Text(
+                    text = message.text,
+                    color = WhiteText,
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(12.dp),
+                    lineHeight = 22.sp
+                )
+            }
+        }
+
+        if (message.isUser) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text("أنت", color = GrayText, fontSize = 11.sp)
         }
     }
 }
