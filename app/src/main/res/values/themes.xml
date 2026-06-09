@@ -1,8 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+        ✅ الإصلاح: تم تغيير الـ parent من
+        android:Theme.Material.Light.NoActionBar  (يسبب شاشة بيضاء مع Compose)
+        إلى Theme.AppCompat.NoActionBar (متوافق مع Jetpack Compose)
+    -->
     <style name="Theme.MUGIWARAMODAI" parent="Theme.AppCompat.NoActionBar">
         <item name="android:statusBarColor">#000000</item>
         <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowBackground">#000000</item>
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
+    </style>
+
+    <!-- Splash Theme لإزالة الشاشة البيضاء عند أول تشغيل -->
+    <style name="Theme.MUGIWARAMODAI.Splash" parent="Theme.MUGIWARAMODAI">
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:windowFullscreen">false</item>
     </style>
 </resources>

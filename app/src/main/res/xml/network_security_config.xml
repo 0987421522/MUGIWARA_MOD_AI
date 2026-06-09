@@ -1,6 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    ✅ هذا الملف يحل مشكلة رفض HTTP على Android 9+
+    ضعه في: app/src/main/res/xml/network_security_config.xml
+-->
 <network-security-config>
+    <!-- السماح بـ HTTP لجميع الاتصالات (مطلوب للـ backend) -->
     <base-config cleartextTrafficPermitted="true">
-        <trust-anchors><certificates src="system"/></trust-anchors>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
     </base-config>
+
+    <!-- إذا استخدمت Groq API مباشرة (HTTPS) -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.groq.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>
