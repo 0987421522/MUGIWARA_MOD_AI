@@ -130,7 +130,7 @@ object RetrofitClient {
         غيّر هذا لـ URL الخاص بك
         مثال: "https://mugiwara-ai.onrender.com/"
     */
-    var BASE_URL = "http://10.0.2.2:8000/" // للمحاكي
+    var BASE_URL = "https://web-production-ca8c2.up.railway.app/" // للمحاكي
     // var BASE_URL = "http://192.168.1.100:8000/" // للجهاز الحقيقي على نفس الشبكة
     // var BASE_URL = "https://your-app.onrender.com/" // للإنترنت (الأفضل)
 
