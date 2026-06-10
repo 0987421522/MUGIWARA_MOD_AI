@@ -41,7 +41,7 @@ interface ApiService {
 }
 
 object RetrofitClient {
-    var BASE_URL = "https://web-production-ca8c2.up.railway.app/"
+    var BASE_URL = "https://mugiwara-backend.onrender.com/"
 
     val instance: ApiService by lazy {
         Retrofit.Builder()
