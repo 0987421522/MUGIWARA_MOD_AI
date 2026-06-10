@@ -21,32 +21,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.mugiwara.mod.network.*
+import com.mugiwara.mod.network.ChatRequest
+import com.mugiwara.mod.network.RetrofitClient
 import com.mugiwara.mod.ui.theme.*
 import kotlinx.coroutines.launch
 
-// ===== SYSTEM PROMPT للمساعد =====
-private const val SYSTEM_PROMPT = """أنت MUGIWARA MOD، مساعد ذكاء اصطناعي متكامل واحترافي.
-
-قدراتك الكاملة:
-🔹 البرمجة بجميع اللغات: Kotlin, Java, Python, JavaScript, C++, C#, PHP, Swift, Rust, Go, وغيرها
-🔹 تطوير تطبيقات Android وiOS
-🔹 تطوير الويب (Frontend وBackend)
-🔹 Linux وTermux وأوامر Shell
-🔹 الشبكات والبروتوكولات
-🔹 قواعد البيانات (SQL, NoSQL)
-🔹 الأمن السيبراني الدفاعي والأخلاقي (تعليمي فقط)
-🔹 الذكاء الاصطناعي وتعلم الآلة
-🔹 تصحيح الأكواد وشرحها
-🔹 بناء المشاريع من الصفر
-
-قواعد الرد:
-- رد دائماً بلغة المستخدم (عربي أو إنجليزي)
-- قدّم الأكواد كاملة وجاهزة للتنفيذ
-- اشرح كل خطوة بوضوح
-- كن دقيقاً ومفيداً دائماً"""
-
-// ===== Data Classes =====
 data class ChatMessage(
     val id: Int,
     val text: String,
@@ -69,8 +48,7 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     var messageId by remember { mutableStateOf(1) }
 
-    // تاريخ المحادثة للـ context
-    val conversationHistory = remember { mutableListOf<GroqMessage>() }
+    val conversationHistory = remember { mutableListOf<Map<String, String>>() }
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -90,39 +68,32 @@ fun ChatScreen(
             selectedImage = null
             isLoading = true
 
-            // أضف رسالة المستخدم للتاريخ
-            conversationHistory.add(GroqMessage(role = "user", content = currentInput))
+            conversationHistory.add(mapOf("role" to "user", "content" to currentInput))
 
             scope.launch {
                 if (messages.isNotEmpty()) {
                     listState.animateScrollToItem(messages.size - 1)
                 }
                 try {
-                    // بناء قائمة الرسائل مع System Prompt
-                    val allMessages = mutableListOf(
-                        GroqMessage(role = "system", content = SYSTEM_PROMPT)
-                    ).apply {
-                        // أضف آخر 10 رسائل فقط لتجنب تجاوز الـ context
-                        addAll(conversationHistory.takeLast(10))
-                    }
-
-                    val response = GroqDirectClient.instance.chat(
-                        GroqRequest(messages = allMessages)
+                    val response = RetrofitClient.instance.sendMessage(
+                        ChatRequest(
+                            message = currentInput,
+                            language = "ar",
+                            conversation_history = conversationHistory.takeLast(10).toList()
+                        )
                     )
 
                     val reply = if (response.isSuccessful && response.body() != null) {
-                        val replyText = response.body()!!.choices.firstOrNull()?.message?.content
-                            ?: "⚠️ لم يتم الحصول على رد."
-                        // أضف رد المساعد للتاريخ
-                        conversationHistory.add(GroqMessage(role = "assistant", content = replyText))
+                        val replyText = response.body()!!.reply
+                        conversationHistory.add(mapOf("role" to "assistant", "content" to replyText))
                         replyText
                     } else {
-                        val errorCode = response.code()
-                        when (errorCode) {
-                            401 -> "⚠️ مفتاح API غير صحيح.\nاذهب للإعدادات وأدخل مفتاح Groq الصحيح.\nاحصل عليه مجاناً من: console.groq.com"
-                            429 -> "⚠️ تم تجاوز حد الطلبات. انتظر دقيقة وأعد المحاولة."
-                            500 -> "⚠️ خطأ في الخادم. أعد المحاولة."
-                            else -> "⚠️ خطأ $errorCode: ${response.message()}"
+                        when (response.code()) {
+                            401 -> "⚠️ خطأ في مفتاح التطبيق."
+                            429 -> "⚠️ تم تجاوز حد الطلبات. انتظر دقيقة."
+                            500 -> "⚠️ خطأ في السيرفر. أعد المحاولة."
+                            503 -> "⚠️ السيرفر غير متاح حالياً."
+                            else -> "⚠️ خطأ ${response.code()}: ${response.message()}"
                         }
                     }
 
@@ -135,11 +106,10 @@ fun ChatScreen(
                 } catch (e: Exception) {
                     val errorMsg = when {
                         e.message?.contains("Unable to resolve host") == true ->
-                            "⚠️ لا يوجد اتصال بالإنترنت.\nتأكد من الاتصال بالإنترنت وأعد المحاولة."
+                            "⚠️ لا يوجد اتصال بالإنترنت."
                         e.message?.contains("timeout") == true ->
-                            "⚠️ انتهت مهلة الاتصال.\nأعد المحاولة."
-                        else ->
-                            "⚠️ خطأ: ${e.localizedMessage}"
+                            "⚠️ انتهت مهلة الاتصال. أعد المحاولة."
+                        else -> "⚠️ خطأ: ${e.localizedMessage}"
                     }
                     messages = messages + ChatMessage(
                         id = messageId++,
@@ -161,7 +131,6 @@ fun ChatScreen(
             .fillMaxSize()
             .background(BlackBackground)
     ) {
-        // ===== TopBar =====
         TopAppBar(
             title = {
                 Column {
@@ -182,12 +151,11 @@ fun ChatScreen(
                 titleContentColor = WhiteText
             ),
             actions = {
-                // زر مسح المحادثة
                 IconButton(onClick = {
                     messages = listOf()
                     conversationHistory.clear()
                 }) {
-                    Icon(Icons.Default.Delete, "مسح المحادثة", tint = GrayText)
+                    Icon(Icons.Default.Delete, "مسح", tint = GrayText)
                 }
                 IconButton(onClick = onNavigateToAbout) {
                     Icon(Icons.Default.Info, "عن المطور", tint = Red500)
@@ -198,7 +166,6 @@ fun ChatScreen(
             }
         )
 
-        // ===== قائمة الرسائل =====
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -206,11 +173,8 @@ fun ChatScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             state = listState
         ) {
-            // شاشة الترحيب عند عدم وجود رسائل
             if (messages.isEmpty()) {
-                item {
-                    WelcomeChatContent()
-                }
+                item { WelcomeChatContent() }
             }
 
             items(messages, key = { it.id }) { message ->
@@ -218,13 +182,10 @@ fun ChatScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // مؤشر التحميل
             if (isLoading) {
                 item {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
@@ -259,7 +220,6 @@ fun ChatScreen(
             }
         }
 
-        // ===== معاينة الصورة المحددة =====
         if (selectedImage != null) {
             Box(
                 modifier = Modifier
@@ -275,9 +235,7 @@ fun ChatScreen(
                     AsyncImage(
                         model = selectedImage,
                         contentDescription = null,
-                        modifier = Modifier
-                            .size(60.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                        modifier = Modifier.size(60.dp).clip(RoundedCornerShape(8.dp))
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("تم تحديد الصورة ✅", color = Green500, fontSize = 14.sp)
@@ -289,21 +247,17 @@ fun ChatScreen(
             }
         }
 
-        // ===== حقل الإدخال =====
         Surface(
             color = BlackSurface,
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .fillMaxWidth(),
+                modifier = Modifier.padding(8.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.Bottom
             ) {
                 IconButton(onClick = { imagePicker.launch("image/*") }) {
                     Icon(Icons.Default.Image, "صورة", tint = Green500)
                 }
-
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
@@ -320,7 +274,6 @@ fun ChatScreen(
                     enabled = !isLoading,
                     maxLines = 5
                 )
-
                 IconButton(
                     onClick = sendMessage,
                     enabled = inputText.isNotBlank() && !isLoading
@@ -336,29 +289,20 @@ fun ChatScreen(
     }
 }
 
-// ===== محتوى الترحيب داخل ChatScreen =====
 @Composable
 fun WelcomeChatContent() {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 40.dp, bottom = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("🏴‍☠️", fontSize = 64.sp)
         Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "MUGIWARA MOD AI",
-            color = Red500,
-            fontWeight = FontWeight.Bold,
-            fontSize = 22.sp
-        )
-        Text("مساعدك الذكي المتكامل", color = Green500, fontSize = 14.sp)
+        Text("MUGIWARA MOD AI", color = Red500, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+        Text("مساعدك الذكي — Claude Sonnet", color = Green500, fontSize = 14.sp)
         Spacer(modifier = Modifier.height(24.dp))
 
-        // بطاقات القدرات
-        val capabilities = listOf(
-            "💻 اكتب لي كود Python/Kotlin/Java" to Red500,
+        listOf(
+            "💻 كود Python/Kotlin/Java/C++" to Red500,
             "🐧 أوامر Linux وTermux" to Green500,
             "🔒 أمن سيبراني وشبكات" to Red500,
             "📱 تطوير تطبيقات Android" to Green500,
@@ -366,13 +310,9 @@ fun WelcomeChatContent() {
             "🗄️ قواعد البيانات SQL/NoSQL" to Green500,
             "🐛 تصحيح الأكواد وشرحها" to Red500,
             "🤖 الذكاء الاصطناعي وML" to Green500
-        )
-
-        capabilities.forEach { (text, color) ->
+        ).forEach { (text, color) ->
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 3.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp),
                 colors = CardDefaults.cardColors(containerColor = BlackCard),
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -387,21 +327,16 @@ fun WelcomeChatContent() {
     }
 }
 
-// ===== فقاعة الرسائل =====
 @Composable
 fun ChatBubble(message: ChatMessage) {
     val alignment = if (message.isUser) Alignment.End else Alignment.Start
     val bgColor = if (message.isUser) Red700 else BlackCard
-    val shape = if (message.isUser) {
+    val shape = if (message.isUser)
         RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
-    } else {
+    else
         RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
-    }
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = alignment
-    ) {
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
         if (!message.isUser) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("🏴‍☠️", fontSize = 16.sp)
@@ -415,20 +350,12 @@ fun ChatBubble(message: ChatMessage) {
             AsyncImage(
                 model = message.imageUri,
                 contentDescription = null,
-                modifier = Modifier
-                    .width(200.dp)
-                    .height(200.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                modifier = Modifier.width(200.dp).height(200.dp).clip(RoundedCornerShape(12.dp))
             )
             Spacer(modifier = Modifier.height(4.dp))
         }
 
-        Surface(
-            color = bgColor,
-            shape = shape,
-            modifier = Modifier.widthIn(max = 300.dp)
-        ) {
-            // SelectionContainer يسمح للمستخدم بنسخ النص
+        Surface(color = bgColor, shape = shape, modifier = Modifier.widthIn(max = 300.dp)) {
             SelectionContainer {
                 Text(
                     text = message.text,
